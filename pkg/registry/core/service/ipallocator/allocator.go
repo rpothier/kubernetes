@@ -72,7 +72,7 @@ type Range struct {
 	// base is a cached version of the start IP in the CIDR range as a *big.Int
 	base *big.Int
 	// max is the maximum size of the usable addresses in the range
-	max int
+	max *big.Int
 
 	alloc allocator.Interface
 }
@@ -86,9 +86,9 @@ func NewAllocatorCIDRRange(cidr *net.IPNet, allocatorFactory allocator.Allocator
 	r := Range{
 		net:  cidr,
 		base: base.Add(base, big.NewInt(1)), // don't use the network base
-		max:  maximum(0, int(max-2)),        // don't use the network broadcast,
+		max:  max.Sub(max, big.NewInt(2)),        // don't use the network broadcast,
 	}
-	r.alloc = allocatorFactory(r.max, rangeSpec)
+	r.alloc = allocatorFactory(int(r.max.Int64()), rangeSpec)
 	return &r
 }
 
@@ -125,8 +125,10 @@ func (r *Range) Free() int {
 }
 
 // Used returns the count of IP addresses used in the range.
-func (r *Range) Used() int {
-	return r.max - r.alloc.Free()
+func (r *Range) Used() *big.Int {
+	//return r.max - r.alloc.Free()
+    u := big.NewInt(0)
+	return u.Sub(r.max, big.NewInt(int64(r.alloc.Free())))
 }
 
 // CIDR returns the CIDR covered by the range.
@@ -232,10 +234,10 @@ func (r *Range) contains(ip net.IP) (bool, int) {
 	}
 
 	offset := calculateIPOffset(r.base, ip)
-	if offset < 0 || offset >= r.max {
+	if offset.Sign() < 0 || offset.Cmp(r.max) >= 0 {
 		return false, 0
 	}
-	return true, offset
+	return true, int(offset.Int64())
 }
 
 // bigForIP creates a big.Int based on the provided net.IP
@@ -255,18 +257,19 @@ func addIPOffset(base *big.Int, offset int) net.IP {
 
 // calculateIPOffset calculates the integer offset of ip from base such that
 // base + offset = ip. It requires ip >= base.
-func calculateIPOffset(base *big.Int, ip net.IP) int {
-	return int(big.NewInt(0).Sub(bigForIP(ip), base).Int64())
+func calculateIPOffset(base *big.Int, ip net.IP) *big.Int {
+	return big.NewInt(0).Sub(bigForIP(ip), base)
 }
 
 // RangeSize returns the size of a range in valid addresses.
-func RangeSize(subnet *net.IPNet) int64 {
+func RangeSize(subnet *net.IPNet) *big.Int {
 	ones, bits := subnet.Mask.Size()
 	if bits == 32 && (bits-ones) >= 31 || bits == 128 && (bits-ones) >= 63 {
-		return 0
+		return big.NewInt(0)
 	}
-	max := int64(1) << uint(bits-ones)
-	return max
+	size := int(bits-ones)
+	max := big.NewInt(0) //<< uint(bits-ones)
+	return max.SetBit(max, size,1)
 }
 
 // GetIndexedIP returns a net.IP that is subnet.IP + index in the contiguous IP space.

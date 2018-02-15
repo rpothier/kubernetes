@@ -22,6 +22,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/sets"
 	api "k8s.io/kubernetes/pkg/apis/core"
+	"math/big"
 )
 
 func TestAllocate(t *testing.T) {
@@ -158,7 +159,7 @@ func TestAllocateSmall(t *testing.T) {
 		}
 	}
 
-	if r.Free() != 0 && r.max != 2 {
+	if r.Free() != 0 && r.max != big.NewInt(2) {
 		t.Fatalf("unexpected range: %v", r)
 	}
 
@@ -169,27 +170,27 @@ func TestRangeSize(t *testing.T) {
 	testCases := []struct {
 		name  string
 		cidr  string
-		addrs int64
+		addrs *big.Int
 	}{
 		{
 			name:  "supported IPv4 cidr",
 			cidr:  "192.168.1.0/24",
-			addrs: 256,
+			addrs: big.NewInt(256),
 		},
 		{
 			name:  "unsupported IPv4 cidr",
 			cidr:  "192.168.1.0/1",
-			addrs: 0,
+			addrs: big.NewInt(0),
 		},
 		{
 			name:  "supported IPv6 cidr",
 			cidr:  "2001:db8::/98",
-			addrs: 1073741824,
+			addrs: big.NewInt(1073741824),
 		},
 		{
 			name:  "unsupported IPv6 mask",
 			cidr:  "2001:db8::/65",
-			addrs: 0,
+			addrs: big.NewInt(0),
 		},
 	}
 
@@ -198,7 +199,7 @@ func TestRangeSize(t *testing.T) {
 		if err != nil {
 			t.Errorf("failed to parse cidr for test %s, unexpected error: '%s'", tc.name, err)
 		}
-		if size := RangeSize(cidr); size != tc.addrs {
+		if size := RangeSize(cidr); size.Cmp(tc.addrs) != 0 {
 			t.Errorf("test %s failed. %s should have a range size of %d, got %d",
 				tc.name, tc.cidr, tc.addrs, size)
 		}
