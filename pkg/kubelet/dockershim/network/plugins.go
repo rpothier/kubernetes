@@ -19,6 +19,7 @@ package network
 import (
 	"fmt"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -224,6 +225,7 @@ func (plugin *NoopNetworkPlugin) Status() error {
 }
 
 func getOnePodIP(execer utilexec.Interface, nsenterPath, netnsPath, interfaceName, addrType string) (net.IP, error) {
+	glog.V(3).Infof("in getOnePodIP")
 	// Try to retrieve ip inside container network namespace
 	output, err := execer.Command(nsenterPath, fmt.Sprintf("--net=%s", netnsPath), "-F", "--",
 		"ip", "-o", addrType, "addr", "show", "dev", interfaceName, "scope", "global").CombinedOutput()
@@ -244,20 +246,51 @@ func getOnePodIP(execer utilexec.Interface, nsenterPath, netnsPath, interfaceNam
 		return nil, fmt.Errorf("CNI failed to parse ip from output %s due to %v", output, err)
 	}
 
+	glog.V(3).Infof("getOnePodIP %s", ip)
 	return ip, nil
+}
+
+// isV6Service() uses environmental variables from KDC to determine the
+// preferred IP family. KDC needs a hack to pass the SERVICE_CIDR to the node for this.
+
+func isV6Service() bool {
+
+	env := os.Getenv("IP_MODE")
+	glog.V(3).Infof("GetPodIP IP mode is %s", env)
+
+	//if env == "ipv6" {
+	//	return true
+	//}
+
+	if (env == "dual-stack") || (env == "ipv6") { //env == "ipv6" just for debugging
+		service_cidr := os.Getenv("SERVICE_CIDR")
+		glog.V(3).Infof("GetPodIP service CIDR is %s", service_cidr)
+		//sc, b := os.LookupEnv("SERVICE_CIDR")
+		//glog.V(3).Infof("GetPodIP LookupEnv %s %t",sc,b)
+		addr, _, err := net.ParseCIDR(service_cidr)
+		if err == nil {
+			if addr.To4() == nil {
+				glog.V(3).Infof("GetPodIP v6 preferred")
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // GetPodIP gets the IP of the pod by inspecting the network info inside the pod's network namespace.
 func GetPodIP(execer utilexec.Interface, nsenterPath, netnsPath, interfaceName string) (net.IP, error) {
-	ip, err := getOnePodIP(execer, nsenterPath, netnsPath, interfaceName, "-4")
-	if err != nil {
-		// Fall back to IPv6 address if no IPv4 address is present
-		ip, err = getOnePodIP(execer, nsenterPath, netnsPath, interfaceName, "-6")
+	glog.V(3).Infof("in GetPodIP")
+
+	addrType := "-4"
+	if isV6Service() {
+		addrType = "-6"
 	}
+	ip, err := getOnePodIP(execer, nsenterPath, netnsPath, interfaceName, addrType)
 	if err != nil {
 		return nil, err
 	}
-
+	glog.V(3).Infof("GetPodIP %s", ip)
 	return ip, nil
 }
 
